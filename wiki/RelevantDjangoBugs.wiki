@@ -1,4 +1,5 @@
 #summary A list of Django bugs you are likely to run into when using django-multilingual
+#labels Featured
 
 == Admin: change_stage requires at least one editable field ==
 
@@ -56,4 +57,3 @@ If you use select_related on a queryset of a translatable model and set a non-ze
 *Patch*: available at the Django ticket page.
 
 *Workaround*: do not use select_related this way until the problem gets fixed in Django.
-
