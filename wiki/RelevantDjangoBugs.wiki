@@ -1,9 +1,5 @@
 #summary A list of Django bugs you are likely to run into when using django-multilingual
 
-= Introduction =
-
-This is a list of bugs in the Django core source code you might run into when using django-multilingual.
-
 == Admin: change_stage requires at least one editable field ==
 
 If you create a model that has only translatable fields and try to edit or add instances via the admin interface you will see the following error:
@@ -60,5 +56,4 @@ If you use select_related on a queryset of a translatable model and set a non-ze
 *Patch*: available at the Django ticket page.
 
 *Workaround*: do not use select_related this way until the problem gets fixed in Django.
-
 
