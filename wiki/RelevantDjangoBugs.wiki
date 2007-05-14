@@ -1,0 +1,15 @@
+#summary A list of Django bugs you are likely to run into when using django-multilingual
+
+= Introduction =
+
+This is a list of bugs in the Django core source code you might run into when using django-multilingual.
+
+== Incorrect handling of depth parameter in QuerySet.select_related ==
+
+If you use select_related on a queryset of a translatable model and set a non-zero depth, you might get incorrect values in translatable fields.
+
+Details: [http://code.djangoproject.com/ticket/3275#comment:15 ticket #3275 on djangoproject.com]
+
+This was first reported by mchruszcz [http://code.google.com/p/django-multilingual/issues/detail?id=15 here].  There is a patch available at the Django ticket page.
+
+
