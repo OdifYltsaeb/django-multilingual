@@ -1,3 +1,4 @@
+#labels Featured
 ==Summary==
 
 The Django-Multilingual extension allows you to transparently store content in multiple languages for set fields inside Django models. This is unlike Django [http://www.djangoproject.com/documentation/i18n/ i18n] which is a translation system used for static content.
