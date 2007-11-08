@@ -16,11 +16,11 @@ The Django-Multilingual extension allows you to transparently store content in m
 {{{
 svn co http://django-multilingual.googlecode.com/svn/trunk/ multilingual
 }}}
-*Step 2:* Add the multilingual directory to your PYTHONPATH.
+*Step 2:* Add the multilingual directory to your `PYTHONPATH`.
 
-*Step 3:* Configure your app's 'settings.py' file:
+*Step 3:* Configure your app's `settings.py` file:
 
-Add LANGUAGES setting this is the same setting that is used by i18n.
+Add [http://www.djangoproject.com/documentation/settings/#languages LANGUAGES] setting this is the same setting that is used by i18n.
 {{{
 LANGUAGES = (
     ('en', 'English'),
@@ -28,11 +28,11 @@ LANGUAGES = (
 )
 }}}
 
-Add a DEFAULT_LANGUAGE, in this example setting it to 1 would make the default English as it is first in the LANGUAGES list.
+Add a `DEFAULT_LANGUAGE`, in this example setting it to 1 would make the default English as it is first in the `LANGUAGES` list.
 {{{
 DEFAULT_LANGUAGE = 1
 }}}
-Add multilingual.context_processors.multilingual to TEMPLATE_CONTEXT_PROCESSORS, it should look something like this:
+Add multilingual.context_processors.multilingual to `TEMPLATE_CONTEXT_PROCESSORS`, it should look something like this:
 {{{
 TEMPLATE_CONTEXT_PROCESSORS = (
     'django.core.context_processors.auth',
@@ -41,7 +41,7 @@ TEMPLATE_CONTEXT_PROCESSORS = (
     'multilingual.context_processors.multilingual',
 )
 }}}
-Add 'multilingual' to INSTALLED_APPS, it should look like this:
+Add multilingual to `INSTALLED_APPS`, it should look like this:
 {{{
 INSTALLED_APPS = (
      'django.contrib.auth',
@@ -96,7 +96,7 @@ For displaying data use:
 {{ catergory.name_en }}
 {{ catergory.name_pl }}
 }}}
-If you call 'set_default_language('pl')' it will make 'catergory.name' the same as 'catergory.name_pl'
+If you call `set_default_language('pl')` it will make `catergory.name` the same as `catergory.name_pl`
 
 
 ==How it works==
@@ -117,8 +117,6 @@ class Category(models.Model):
     * Certain bugs with Django. See RelevantDjangoBugs for a summary.
 
 ==Contact==
-
-
 
 
 
