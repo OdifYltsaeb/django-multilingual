@@ -18,7 +18,7 @@ svn co http://django-multilingual.googlecode.com/svn/trunk/ multilingual
 
 *Step 3:* Configure your app's `settings.py` file:
 
-Add [http://www.djangoproject.com/documentation/settings/#languages LANGUAGES] setting this is the same setting that is used by i18n.
+Add [http://www.djangoproject.com/documentation/settings/#languages LANGUAGES setting] this is the same setting that is used by Django's i18n.
 {{{
 LANGUAGES = (
     ('en', 'English'),
@@ -26,7 +26,7 @@ LANGUAGES = (
 )
 }}}
 
-Add a `DEFAULT_LANGUAGE`, in this example setting it to 1 would make the default English as it is first in the `LANGUAGES` list.
+Add `DEFAULT_LANGUAGE`, in this example setting it to 1 would make the default English as it is first in the `LANGUAGES` list.
 {{{
 DEFAULT_LANGUAGE = 1
 }}}
@@ -115,4 +115,3 @@ class Category(models.Model):
     * Certain bugs with Django. See RelevantDjangoBugs for a summary.
 
 ==Contact==
-
