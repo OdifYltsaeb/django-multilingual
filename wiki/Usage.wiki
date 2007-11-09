@@ -1,0 +1,41 @@
+#summary One-sentence summary of this page.
+#labels Featured
+
+==Basic Usage==
+
+For capturing data you can use template tag 'edit_translation', example using generic create_object view:
+
+In url_patterns:
+{{{
+(r'^category/create/$', 'django.views.generic.create_update.create_object',{'model': Category})
+}}}
+In the template file:
+{{{
+{% load multilingual_tags %}
+
+<form method="post" action="">
+    {{ form.parent }}
+    {% edit_translation form name "en" %}
+    {% edit_translation form name "pl" %}
+<input type="submit" />
+</form>
+}}}
+For displaying data use:
+{{{
+{{ catergory.name_en }}
+{{ catergory.name_pl }}
+}}}
+If you call `set_default_language('pl')` it will make `catergory.name` the same as `catergory.name_pl`
+
+
+==How it works==
+
+With the above Catergory model example, django-multilingual will actually create two models, Category containing the non-translatable fields (in this case: id and parent) and
+CategoryTranslation containing all the translatable fields, the language id and a reference to the main Category model, however, django-multilingual flattens this out and will give the illusion of a model like this:
+{{{
+class Category(models.Model):
+    parent = models.ForeignKey('self', blank=True, null=True)
+    name_en = models.CharField(maxlength=250)
+    name_pl = models.CharField(maxlength=250)
+    name = models.CharField(maxlength=250)
+}}}
