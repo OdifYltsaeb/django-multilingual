@@ -7,6 +7,9 @@
 {{{
 svn co http://django-multilingual.googlecode.com/svn/trunk/ multilingual
 }}}
+
+  * Note: if you use newforms-admin instead of trunk, then make sure you apply this patch to Django: http://code.djangoproject.com/ticket/6075 or you will get errors when editing translations in admin interface.
+
 *Step 2:* Add the multilingual directory to your `PYTHONPATH`.
 
 *Step 3:* Configure your app's `settings.py` file:
