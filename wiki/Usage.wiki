@@ -22,10 +22,10 @@ In the template file:
 }}}
 For displaying data use:
 {{{
-{{ catergory.name_en }}
-{{ catergory.name_pl }}
+{{ category.name_en }}
+{{ category.name_pl }}
 }}}
-If you call `set_default_language('pl')` it will make `catergory.name` the same as `catergory.name_pl`
+If you call `set_default_language('pl')` it will make `category.name` the same as `category.name_pl`
 
 
 ==How it works==
