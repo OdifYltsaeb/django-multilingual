@@ -11,4 +11,4 @@ The Django-Multilingual extension allows you to transparently store content in m
     * Automatically provides extra language fields in the Django Admin interface.
     * Easy to use template tags for data capture.
 
-Please go to the [Installation] page for install and setup instructions, and see the [Usage] page for information on how to use Django multilingual in your applications. 
+Please go to the [Usage] page for information on how to install and use Django-multilingual in your applications. 
