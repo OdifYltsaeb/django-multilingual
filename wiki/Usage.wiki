@@ -66,6 +66,18 @@ class Category(models.Model):
 }}}
 In the above example you can see that the multilingual field: 'name' can be used in the Admin internal class for display and search.
 
+You may also add a Meta inner class to the Translation class to configure the translation mechanism. Currently, the only properties recognized is:
+  * {{{db_table}}} sets the database table name (default: {{{<model>_translation}}})
+
+{{{
+class Dog(models.Model):
+    owner = models.ForeignKey(Human)
+    class Translation(multilingual.Translation):
+        breed = models.CharField(maxlength=50)
+        class Meta:
+            db_table = 'dog_languages_table'
+}}}
+
 ==Basic Usage==
 
 For capturing data you can use template tag 'edit_translation', example using generic create_object view:
