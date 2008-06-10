@@ -78,6 +78,22 @@ class Dog(models.Model):
             db_table = 'dog_languages_table'
 }}}
 
+*Step 5:* (Optional) Add middleware to set the default language.
+
+Django contains middleware that automatically discovers the browser's language and allows the user to change it. All translated strings in Python code and templates are then automatically shown in this language. You can use the same language as the default translation for model fields.
+
+Add `multilingual.middleware.DefaultLanguageMiddleware` to `MIDDLEWARE_CLASSES`:
+{{{
+MIDDLEWARE_CLASSES = (
+    ...
+    'django.middleware.locale.LocaleMiddleware',
+    'multilingual.middleware.DefaultLanguageMiddleware',
+    ...
+)
+}}}
+
+The multilingual middleware must come after the language discovery middleware, in this case `django.middleware.locale.LocaleMiddleware`.
+
 ==Basic Usage==
 
 For capturing data you can use template tag 'edit_translation', example using generic create_object view:
@@ -102,7 +118,7 @@ For displaying data use:
 {{ category.name_en }}
 {{ category.name_pl }}
 }}}
-If you call `set_default_language('pl')` it will make `category.name` the same as `category.name_pl`
+If you call `set_default_language('pl')` it will make `category.name` the same as `category.name_pl`. (This is what the middleware does for you automatically.)
 
 
 ==How it works==
