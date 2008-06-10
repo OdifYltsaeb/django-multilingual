@@ -80,7 +80,7 @@ class Dog(models.Model):
 
 *Step 5:* (Optional) Add middleware to set the default language.
 
-Django contains middleware that automatically discovers the browser's language and allows the user to change it. All translated strings in Python code and templates are then automatically shown in this language. You can use the same language as the default translation for model fields.
+Django contains middleware that automatically discovers the browser's language and allows the user to change it. All translated strings in Python code and templates are then automatically shown in this language. (See [http://www.djangoproject.com/documentation/i18n/ the official Django documentation].) You can use the same language as the default translation for model fields.
 
 Add `multilingual.middleware.DefaultLanguageMiddleware` to `MIDDLEWARE_CLASSES`:
 {{{
