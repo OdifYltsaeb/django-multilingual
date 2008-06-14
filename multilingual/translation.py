@@ -14,7 +14,9 @@ from multilingual.exceptions import TranslationDoesNotExist
 from multilingual.fields import TranslationForeignKey
 from multilingual.manipulators import add_multilingual_manipulators
 from multilingual import manager
-from multilingual.compat import IS_NEWFORMS_ADMIN
+from multilingual.compat import IS_NEWFORMS_ADMIN, IS_QSRF
+
+from new import instancemethod
 
 if IS_NEWFORMS_ADMIN:
     from django.contrib.admin import StackedInline, ModelAdmin
@@ -223,7 +225,7 @@ class Translation:
                 # create the 'fname'_'language_code' proxy properties
                 for language_id in get_language_id_list():
                     language_code = get_language_code(language_id)
-                    fname_lng = fname + '_' + language_code
+                    fname_lng = fname + '_' + language_code.replace('-', '_')
                     translated_fields[fname_lng] = (field, language_id)
                     setattr(main_cls, fname_lng,
                             TranslatedFieldProxy(fname, fname_lng, field,
@@ -296,6 +298,18 @@ class Translation:
     
         trans_model = ModelBase(translation_model_name, (models.Model,), trans_attrs)
         trans_model._meta.translated_fields = cls.create_translation_attrs(main_cls)
+
+        if IS_QSRF:
+            _old_init_name_map = main_cls._meta.__class__.init_name_map
+            def init_name_map(self):
+                cache = _old_init_name_map(self)
+                for name, field_and_lang_id in trans_model._meta.translated_fields.items():
+                    import sys; sys.stderr.write('TM %r\n' % trans_model)
+                    cache[name] = (field_and_lang_id[0], trans_model, True, False)
+                return cache
+            main_cls._meta.init_name_map = instancemethod(init_name_map,
+                                                          main_cls._meta,
+                                                          main_cls._meta.__class__)
     
         main_cls._meta.translation_model = trans_model
         main_cls.get_translation = get_translation
