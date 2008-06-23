@@ -9,7 +9,7 @@ except:
     # if this fails then _ is a builtin
     pass
 
-class MultiLingualFlatPage(models.Model):
+class MultilingualFlatPage(models.Model):
     # non-translatable fields first
     url = models.CharField(_('URL'), maxlength=100, validator_list=[validators.isAlphaNumericURL], db_index=True,
         help_text=_("Example: '/about/contact/'. Make sure to have leading and trailing slashes."))
