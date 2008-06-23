@@ -1,8 +1,8 @@
 from django.contrib import admin
 from django.utils.translation import ugettext_lazy as _
-from multilingual.flatpages.models import MultilingualFlatPage
+from multilingual.flatpages.models import MultiLingualFlatPage
 
-class MultilingualFlatPageAdmin(admin.ModelAdmin):
+class MultiLingualFlatPageAdmin(admin.ModelAdmin):
     fieldsets = (
         (None, {'fields': ('url', 'sites')}),
         (_('Advanced options'), {'classes': ('collapse',), 'fields': ('enable_comments', 'registration_required', 'template_name')}),
@@ -10,5 +10,5 @@ class MultilingualFlatPageAdmin(admin.ModelAdmin):
     list_filter = ('sites',)
     search_fields = ('url', 'title')
 
-admin.site.register(MultilingualFlatPage, MultilingualFlatPageAdmin)
+admin.site.register(MultiLingualFlatPage, MultiLingualFlatPageAdmin)
 
