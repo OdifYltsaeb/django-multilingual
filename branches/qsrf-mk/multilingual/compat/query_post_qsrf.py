@@ -10,22 +10,210 @@ from django.db import connection
 from django.db.models.fields import FieldDoesNotExist
 from django.db.models.query import QuerySet, Q
 from django.db.models.sql.query import Query
+from django.db.models.sql.datastructures import Count, EmptyResultSet, Empty, MultiJoin
+from django.db.models.sql.constants import *
 from django.db.models.sql.where import WhereNode, EverythingNode, AND, OR
 
 from multilingual.languages import (get_translation_table_alias, get_language_id_list,
-                                    get_default_language, get_translated_field_alias)
+                                    get_default_language, get_translated_field_alias,
+                                    get_language_id_from_id_or_code)
 
 __ALL__ = ['MultilingualModelQuerySet']
 
 class MultilingualQuery(Query):
     def __init__(self, model, connection, where=WhereNode):
-        super(MultilingualQuery, self).__init__(model, connection, where)
+        self.extra_join = {}
+        extra_select = {}
+        super(MultilingualQuery, self).__init__(model, connection, where=where)
+        opts = self.model._meta
+        qn = self.quote_name_unless_alias
+        qn2 = self.connection.ops.quote_name        
+        master_table_name = opts.db_table
+        translation_opts = opts.translation_model._meta
+        trans_table_name = translation_opts.db_table
+        if hasattr(opts, 'translation_model'):
+            master_table_name = opts.db_table
+            for language_id in get_language_id_list():
+                for fname in [f.attname for f in translation_opts.fields]:
+                    table_alias = get_translation_table_alias(trans_table_name,
+                        language_id)
+                    field_alias = get_translated_field_alias(fname,
+                        language_id)
+                    extra_select[field_alias] = qn2(table_alias) + '.' + qn2(fname)
+            self.add_extra(extra_select, None,None,None,None,None)
+    
+    def clone(self, klass=None, **kwargs):
+        obj = super(MultilingualQuery, self).clone(klass=klass, **kwargs)
+        obj.extra_join = self.extra_join
+        return obj
 
     def pre_sql_setup(self):
-        """
-        Add all the JOINS and WHERES for multilingual data.
+        """Adds the JOINS and SELECTS for fetching multilingual data.
         """
         super(MultilingualQuery, self).pre_sql_setup()
+        opts = self.model._meta
+        qn = self.quote_name_unless_alias
+        qn2 = self.connection.ops.quote_name
+        if hasattr(opts, 'translation_model'):
+            master_table_name = opts.db_table
+            translation_opts = opts.translation_model._meta
+            trans_table_name = translation_opts.db_table
+            for language_id in get_language_id_list():
+                table_alias = get_translation_table_alias(trans_table_name,
+                                                          language_id)
+                trans_join = ('LEFT JOIN %s AS %s ON ((%s.master_id = %s.id) AND (%s.language_id = %s))'
+                           % (qn2(translation_opts.db_table),
+                           qn2(table_alias),
+                           qn2(table_alias),
+                           qn(master_table_name),
+                           qn2(table_alias),
+                           language_id))
+                self.extra_join[table_alias] = trans_join
+
+    def get_from_clause(self):
+        """Add the JOINS for related multilingual fields filtering.
+        """
+        result = super(MultilingualQuery, self).get_from_clause()
+        from_ = result[0]
+        for join in self.extra_join.values():
+            from_.append(join)
+        return (from_, result[1])
+
+    def add_filter(self, filter_expr, connector=AND, negate=False, trim=False,
+            can_reuse=None):
+        """Copied from add_filter to generate WHERES for translation fields.
+        """
+        arg, value = filter_expr
+        parts = arg.split(LOOKUP_SEP)
+        if not parts:
+            raise FieldError("Cannot parse keyword query %r" % arg)
+
+        # Work out the lookup type and remove it from 'parts', if necessary.
+        if len(parts) == 1 or parts[-1] not in self.query_terms:
+            lookup_type = 'exact'
+        else:
+            lookup_type = parts.pop()
+
+        # Interpret '__exact=None' as the sql 'is NULL'; otherwise, reject all
+        # uses of None as a query value.
+        if value is None:
+            if lookup_type != 'exact':
+                raise ValueError("Cannot use None as a query value")
+            lookup_type = 'isnull'
+            value = True
+        elif callable(value):
+            value = value()
+
+        opts = self.get_meta()
+        alias = self.get_initial_alias()
+        allow_many = trim or not negate
+
+        try:
+            field, target, opts, join_list, last = self.setup_joins(parts, opts,
+                    alias, True, allow_many, can_reuse=can_reuse)
+        except MultiJoin, e:
+            self.split_exclude(filter_expr, LOOKUP_SEP.join(parts[:e.level]))
+            return
+
+
+        #NOTE: here comes Django Multilingual
+        if hasattr(opts, 'translation_model'):
+            field_name = parts[-1]
+            if field_name == 'pk':
+                field_name = opts.pk.name
+            translation_opts = opts.translation_model._meta
+            if field_name in translation_opts.translated_fields.keys():
+                field, model, direct, m2m = opts.get_field_by_name(field_name)
+                if model == opts.translation_model:
+                    language_id = translation_opts.translated_fields[field_name][1]
+                    if language_id is None:
+                        language_id = get_default_language()
+                    master_table_name = opts.db_table
+                    trans_table_alias = get_translation_table_alias(
+                        model._meta.db_table, language_id)
+                    new_table = (master_table_name + "__" + trans_table_alias)
+                    self.where.add((new_table, field.column, field, lookup_type, value), connector)
+                    return
+
+
+        final = len(join_list)
+        penultimate = last.pop()
+        if penultimate == final:
+            penultimate = last.pop()
+        if trim and len(join_list) > 1:
+            extra = join_list[penultimate:]
+            join_list = join_list[:penultimate]
+            final = penultimate
+            penultimate = last.pop()
+            col = self.alias_map[extra[0]][LHS_JOIN_COL]
+            for alias in extra:
+                self.unref_alias(alias)
+        else:
+            col = target.column
+        alias = join_list[-1]
+
+        if final > 1:
+            # An optimization: if the final join is against the same column as
+            # we are comparing against, we can go back one step in the join
+            # chain and compare against the lhs of the join instead. The result
+            # (potentially) involves one less table join.
+            join = self.alias_map[alias]
+            if col == join[RHS_JOIN_COL]:
+                self.unref_alias(alias)
+                alias = join[LHS_ALIAS]
+                col = join[LHS_JOIN_COL]
+                join_list = join_list[:-1]
+                final -= 1
+                if final == penultimate:
+                    penultimate = last.pop()
+
+        if (lookup_type == 'isnull' and value is True and not negate and
+                final > 1):
+            # If the comparison is against NULL, we need to use a left outer
+            # join when connecting to the previous model. We make that
+            # adjustment here. We don't do this unless needed as it's less
+            # efficient at the database level.
+            self.promote_alias(join_list[penultimate])
+
+        if connector == OR:
+            # Some joins may need to be promoted when adding a new filter to a
+            # disjunction. We walk the list of new joins and where it diverges
+            # from any previous joins (ref count is 1 in the table list), we
+            # make the new additions (and any existing ones not used in the new
+            # join list) an outer join.
+            join_it = iter(join_list)
+            table_it = iter(self.tables)
+            join_it.next(), table_it.next()
+            for join in join_it:
+                table = table_it.next()
+                if join == table and self.alias_refcount[join] > 1:
+                    continue
+                self.promote_alias(join)
+                if table != join:
+                    self.promote_alias(table)
+                break
+            for join in join_it:
+                self.promote_alias(join)
+            for table in table_it:
+                # Some of these will have been promoted from the join_list, but
+                # that's harmless.
+                self.promote_alias(table)
+
+        self.where.add((alias, col, field, lookup_type, value), connector)
+        if negate:
+            for alias in join_list:
+                self.promote_alias(alias)
+            if final > 1 and lookup_type != 'isnull':
+                for alias in join_list:
+                    if self.alias_map[alias] == self.LOUTER:
+                        j_col = self.alias_map[alias][RHS_JOIN_COL]
+                        entry = Node([(alias, j_col, None, 'isnull', True)])
+                        entry.negate()
+                        self.where.add(entry, AND)
+                        break
+        if can_reuse is not None:
+            can_reuse.update(join_list)
+
 
     def _setup_joins_with_translation(self, names, opts, alias,
                                       dupe_multis, allow_many=True,
@@ -50,9 +238,6 @@ class MultilingualQuery(Query):
         column (used for any 'where' constraint), the final 'opts' value and the
         list of tables joined.
         """
-        translation_opts = opts.translation_model._meta
-
-        import sys; sys.stderr.write("setup_joins %r, %r, %r\n" % (names,opts, alias))
 
         joins = [alias]
         last = [0]
@@ -61,7 +246,7 @@ class MultilingualQuery(Query):
             if name == 'pk':
                 name = opts.pk.name
 
-            try:
+            try:                
                 field, model, direct, m2m = opts.get_field_by_name(name)
             except FieldDoesNotExist:
                 for f in opts.fields:
@@ -79,15 +264,32 @@ class MultilingualQuery(Query):
                 for alias in joins:
                     self.unref_alias(alias)
                 raise MultiJoin(pos + 1)
-
+            
             # translation machinery appears here
-            if model == opts.translation_model:
-                language_id = translation_opts.translated_fields[name][1]
-                if language_id is None:
-                    language_id = get_default_language()
-
-                target = field
-                continue
+            if hasattr(opts, 'translation_model'):
+                translation_opts = opts.translation_model._meta
+                if model == opts.translation_model:
+                    language_id = translation_opts.translated_fields[name][1]
+                    if language_id is None:
+                        language_id = get_default_language()
+                    #TODO: check alias
+                    master_table_name = opts.db_table
+                    trans_table_alias = get_translation_table_alias(
+                        model._meta.db_table, language_id)
+                    new_table = (master_table_name + "__" + trans_table_alias)
+                    qn = self.quote_name_unless_alias
+                    qn2 = self.connection.ops.quote_name
+                    #TODO: check if primary key name is different than "id"?
+                    trans_join = ('LEFT JOIN %s AS %s ON ((%s.master_id = %s.id) AND (%s.language_id = %s))'
+                                 % (qn2(model._meta.db_table),
+                                 qn2(new_table),
+                                 qn2(new_table),
+                                 qn(master_table_name),
+                                 qn2(new_table),
+                                 language_id))
+                    self.extra_join[new_table] = trans_join
+                    target = field
+                    continue
             elif model:
                 # The field lives on a base class of the current model.
                 alias_list = []
@@ -196,14 +398,9 @@ class MultilingualQuery(Query):
 
     def setup_joins(self, names, opts, alias, dupe_multis, allow_many=True,
             allow_explicit_fk=False, can_reuse=None):
-        if hasattr(opts, 'translation_model'):
-            return self._setup_joins_with_translation(names, opts, alias, dupe_multis,
-                                                      allow_many, allow_explicit_fk,
-                                                      can_reuse)
-        else:
-            return super(MultilingualQuery, self).setup_joins(names, opts, alias, dupe_multis,
-                                                              allow_many, allow_explicit_fk,
-                                                              can_reuse)
+        return self._setup_joins_with_translation(names, opts, alias, dupe_multis,
+                                                  allow_many, allow_explicit_fk,
+                                                  can_reuse)
 
 class MultilingualModelQuerySet(QuerySet):
     """
@@ -247,12 +444,12 @@ class MultilingualModelQuerySet(QuerySet):
         if hasattr(self.model._meta, 'translation_model'):
             trans_opts = self.model._meta.translation_model._meta
             new_field_names = []
-            for fn in field_names:
+            for field_name in field_names:
                 prefix = ''
-                if fn[0] == '-':
+                if field_name[0] == '-':
                     prefix = '-'
-                    fn = fn[1:]
-                field_and_lang = trans_opts.translated_fields.get(fn)
+                    field_name = field_name[1:]
+                field_and_lang = trans_opts.translated_fields.get(field_name)
                 if field_and_lang:
                     field, language_id = field_and_lang
                     if language_id is None:
@@ -262,7 +459,7 @@ class MultilingualModelQuerySet(QuerySet):
                     new_field_names.append(prefix + real_name)
                 else:
                     new_field_names.append(prefix + field_name)
-            return super(MultilingualModelQuerySet, self).order_by(*new_field_names)
+            return super(MultilingualModelQuerySet, self).extra(order_by=new_field_names)
         else:
             return super(MultilingualModelQuerySet, self).order_by(*field_names)
 
