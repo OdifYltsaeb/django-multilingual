@@ -304,7 +304,7 @@ class Translation:
             def init_name_map(self):
                 cache = _old_init_name_map(self)
                 for name, field_and_lang_id in trans_model._meta.translated_fields.items():
-                    import sys; sys.stderr.write('TM %r\n' % trans_model)
+                    #import sys; sys.stderr.write('TM %r\n' % trans_model)
                     cache[name] = (field_and_lang_id[0], trans_model, True, False)
                 return cache
             main_cls._meta.init_name_map = instancemethod(init_name_map,
