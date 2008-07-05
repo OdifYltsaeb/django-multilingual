@@ -41,7 +41,7 @@ def translation_save_translated_fields(instance, **kwargs):
     for l_id, translation in instance._translation_cache.iteritems():
         # set the translation ID just in case the translation was
         # created while instance was not stored in the DB yet
-        translation.master_id = instance.id
+        translation.master_id = instance.pk
         translation.save()
 
 def translation_overwrite_previous(instance, **kwargs):

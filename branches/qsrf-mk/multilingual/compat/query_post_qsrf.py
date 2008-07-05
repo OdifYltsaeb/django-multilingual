@@ -63,11 +63,12 @@ class MultilingualQuery(Query):
             for language_id in get_language_id_list():
                 table_alias = get_translation_table_alias(trans_table_name,
                                                           language_id)
-                trans_join = ('LEFT JOIN %s AS %s ON ((%s.master_id = %s.id) AND (%s.language_id = %s))'
+                trans_join = ('LEFT JOIN %s AS %s ON ((%s.master_id = %s.%s) AND (%s.language_id = %s))'
                            % (qn2(translation_opts.db_table),
                            qn2(table_alias),
                            qn2(table_alias),
                            qn(master_table_name),
+                           qn2(self.model._meta.pk.column),
                            qn2(table_alias),
                            language_id))
                 self.extra_join[table_alias] = trans_join
@@ -318,12 +319,12 @@ class MultilingualQuery(Query):
                     new_table = (master_table_name + "__" + trans_table_alias)
                     qn = self.quote_name_unless_alias
                     qn2 = self.connection.ops.quote_name
-                    #TODO: check if primary key name is different than "id"?
-                    trans_join = ('LEFT JOIN %s AS %s ON ((%s.master_id = %s.id) AND (%s.language_id = %s))'
+                    trans_join = ('LEFT JOIN %s AS %s ON ((%s.master_id = %s.%s) AND (%s.language_id = %s))'
                                  % (qn2(model._meta.db_table),
                                  qn2(new_table),
                                  qn2(new_table),
                                  qn(master_table_name),
+                                 qn2(model._meta.pk.column),
                                  qn2(new_table),
                                  language_id))
                     self.extra_join[new_table] = trans_join
