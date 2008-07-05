@@ -243,7 +243,8 @@ class Translation:
         for fname, field in cls.__dict__.items():
             if isinstance(field, models.fields.Field):
                 if getattr(field,'unique',False):
-                    field.unique = False
+                    #TODO: warning, unique is a ro property is read only, check usage
+                    field._unique = False
                     unique_fields.append(fname)
         return unique_fields
     get_unique_fields = classmethod(get_unique_fields)
