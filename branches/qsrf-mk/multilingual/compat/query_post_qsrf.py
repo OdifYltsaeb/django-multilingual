@@ -5,6 +5,8 @@ fields.
 This file contains the implementation for QSRF Django.
 """
 
+import datetime
+
 from django.core.exceptions import FieldError
 from django.db import connection
 from django.db.models.fields import FieldDoesNotExist
@@ -132,7 +134,12 @@ class MultilingualQuery(Query):
                     trans_table_alias = get_translation_table_alias(
                         model._meta.db_table, language_id)
                     new_table = (master_table_name + "__" + trans_table_alias)
-                    self.where.add((new_table, field.column, field, lookup_type, value), connector)
+                    params = field.get_db_prep_lookup(lookup_type, value)
+                    if isinstance(value, datetime.datetime):
+                        annotation = datetime.datetime
+                    else:
+                        annotation = bool(value)
+                    self.where.add((new_table, field.column, field, lookup_type, annotation, params), connector)
                     return
 
 
@@ -152,20 +159,22 @@ class MultilingualQuery(Query):
             col = target.column
         alias = join_list[-1]
 
-        if final > 1:
+        while final > 1:
             # An optimization: if the final join is against the same column as
             # we are comparing against, we can go back one step in the join
-            # chain and compare against the lhs of the join instead. The result
-            # (potentially) involves one less table join.
+            # chain and compare against the lhs of the join instead (and then
+            # repeat the optimization). The result, potentially, involves less
+            # table joins.
             join = self.alias_map[alias]
-            if col == join[RHS_JOIN_COL]:
-                self.unref_alias(alias)
-                alias = join[LHS_ALIAS]
-                col = join[LHS_JOIN_COL]
-                join_list = join_list[:-1]
-                final -= 1
-                if final == penultimate:
-                    penultimate = last.pop()
+            if col != join[RHS_JOIN_COL]:
+                break
+            self.unref_alias(alias)
+            alias = join[LHS_ALIAS]
+            col = join[LHS_JOIN_COL]
+            join_list = join_list[:-1]
+            final -= 1
+            if final == penultimate:
+                penultimate = last.pop()
 
         if (lookup_type == 'isnull' and value is True and not negate and
                 final > 1):
@@ -199,18 +208,41 @@ class MultilingualQuery(Query):
                 # that's harmless.
                 self.promote_alias(table)
 
-        self.where.add((alias, col, field, lookup_type, value), connector)
+        # To save memory and copying time, convert the value from the Python
+        # object to the actual value used in the SQL query.
+        if field:
+            params = field.get_db_prep_lookup(lookup_type, value)
+        else:
+            params = Field().get_db_prep_lookup(lookup_type, value)
+        if isinstance(value, datetime.datetime):
+            annotation = datetime.datetime
+        else:
+            annotation = bool(value)
+
+        self.where.add((alias, col, field.db_type(), lookup_type, annotation,
+            params), connector)
+
         if negate:
             for alias in join_list:
                 self.promote_alias(alias)
-            if final > 1 and lookup_type != 'isnull':
-                for alias in join_list:
-                    if self.alias_map[alias] == self.LOUTER:
-                        j_col = self.alias_map[alias][RHS_JOIN_COL]
-                        entry = Node([(alias, j_col, None, 'isnull', True)])
-                        entry.negate()
-                        self.where.add(entry, AND)
-                        break
+            if lookup_type != 'isnull':
+                if final > 1:
+                    for alias in join_list:
+                        if self.alias_map[alias][JOIN_TYPE] == self.LOUTER:
+                            j_col = self.alias_map[alias][RHS_JOIN_COL]
+                            entry = Node([(alias, j_col, None, 'isnull', True,
+                                    [True])])
+                            entry.negate()
+                            self.where.add(entry, AND)
+                            break
+                elif not (lookup_type == 'in' and not value) and field.null:
+                    # Leaky abstraction artifact: We have to specifically
+                    # exclude the "foo__in=[]" case from this handling, because
+                    # it's short-circuited in the Where class.
+                    entry = Node([(alias, col, None, 'isnull', True, [True])])
+                    entry.negate()
+                    self.where.add(entry, AND)
+
         if can_reuse is not None:
             can_reuse.update(join_list)
 
@@ -238,15 +270,21 @@ class MultilingualQuery(Query):
         column (used for any 'where' constraint), the final 'opts' value and the
         list of tables joined.
         """
-
         joins = [alias]
         last = [0]
+        dupe_set = set()
+        exclusions = set()
         for pos, name in enumerate(names):
+            try:
+                exclusions.add(int_alias)
+            except NameError:
+                pass
+            exclusions.add(alias)
             last.append(len(joins))
             if name == 'pk':
                 name = opts.pk.name
 
-            try:                
+            try:
                 field, model, direct, m2m = opts.get_field_by_name(name)
             except FieldDoesNotExist:
                 for f in opts.fields:
@@ -260,12 +298,13 @@ class MultilingualQuery(Query):
                     names = opts.get_all_field_names()
                     raise FieldError("Cannot resolve keyword %r into field. "
                             "Choices are: %s" % (name, ", ".join(names)))
+
             if not allow_many and (m2m or not direct):
                 for alias in joins:
                     self.unref_alias(alias)
                 raise MultiJoin(pos + 1)
-            
-            # translation machinery appears here
+
+            #NOTE: Start Django Multilingual specific code
             if hasattr(opts, 'translation_model'):
                 translation_opts = opts.translation_model._meta
                 if model == opts.translation_model:
@@ -290,17 +329,33 @@ class MultilingualQuery(Query):
                     self.extra_join[new_table] = trans_join
                     target = field
                     continue
+                    #NOTE: End Django Multilingual specific code
             elif model:
                 # The field lives on a base class of the current model.
                 alias_list = []
                 for int_model in opts.get_base_chain(model):
                     lhs_col = opts.parents[int_model].column
+                    dedupe = lhs_col in opts.duplicate_targets
+                    if dedupe:
+                        exclusions.update(self.dupe_avoidance.get(
+                                (id(opts), lhs_col), ()))
+                        dupe_set.add((opts, lhs_col))
                     opts = int_model._meta
                     alias = self.join((alias, opts.db_table, lhs_col,
-                            opts.pk.column), exclusions=joins)
+                            opts.pk.column), exclusions=exclusions)
                     joins.append(alias)
+                    exclusions.add(alias)
+                    for (dupe_opts, dupe_col) in dupe_set:
+                        self.update_dupe_avoidance(dupe_opts, dupe_col, alias)
             cached_data = opts._join_cache.get(name)
             orig_opts = opts
+            dupe_col = direct and field.column or field.field.column
+            dedupe = dupe_col in opts.duplicate_targets
+            if dupe_set or dedupe:
+                if dedupe:
+                    dupe_set.add((opts, dupe_col))
+                exclusions.update(self.dupe_avoidance.get((id(opts), dupe_col),
+                        ()))
 
             if direct:
                 if m2m:
@@ -322,9 +377,11 @@ class MultilingualQuery(Query):
                                 target)
 
                     int_alias = self.join((alias, table1, from_col1, to_col1),
-                            dupe_multis, joins, nullable=True, reuse=can_reuse)
+                            dupe_multis, exclusions, nullable=True,
+                            reuse=can_reuse)
                     alias = self.join((int_alias, table2, from_col2, to_col2),
-                            dupe_multis, joins, nullable=True, reuse=can_reuse)
+                            dupe_multis, exclusions, nullable=True,
+                            reuse=can_reuse)
                     joins.extend([int_alias, alias])
                 elif field.rel:
                     # One-to-one or many-to-one field
@@ -340,7 +397,7 @@ class MultilingualQuery(Query):
                                 opts, target)
 
                     alias = self.join((alias, table, from_col, to_col),
-                            exclusions=joins, nullable=field.null)
+                            exclusions=exclusions, nullable=field.null)
                     joins.append(alias)
                 else:
                     # Non-relation fields.
@@ -368,9 +425,11 @@ class MultilingualQuery(Query):
                                 target)
 
                     int_alias = self.join((alias, table1, from_col1, to_col1),
-                            dupe_multis, joins, nullable=True, reuse=can_reuse)
+                            dupe_multis, exclusions, nullable=True,
+                            reuse=can_reuse)
                     alias = self.join((int_alias, table2, from_col2, to_col2),
-                            dupe_multis, joins, nullable=True, reuse=can_reuse)
+                            dupe_multis, exclusions, nullable=True,
+                            reuse=can_reuse)
                     joins.extend([int_alias, alias])
                 else:
                     # One-to-many field (ForeignKey defined on the target model)
@@ -388,8 +447,15 @@ class MultilingualQuery(Query):
                                 opts, target)
 
                     alias = self.join((alias, table, from_col, to_col),
-                            dupe_multis, joins, nullable=True, reuse=can_reuse)
+                            dupe_multis, exclusions, nullable=True,
+                            reuse=can_reuse)
                     joins.append(alias)
+
+            for (dupe_opts, dupe_col) in dupe_set:
+                try:
+                    self.update_dupe_avoidance(dupe_opts, dupe_col, int_alias)
+                except NameError:
+                    self.update_dupe_avoidance(dupe_opts, dupe_col, alias)
 
         if pos != len(names) - 1:
             raise FieldError("Join on field %r not permitted." % name)
