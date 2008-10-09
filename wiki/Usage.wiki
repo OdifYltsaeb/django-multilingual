@@ -137,6 +137,8 @@ For displaying data use:
 }}}
 If you call `set_default_language('pl')` it will make `category.name` the same as `category.name_pl`. (This is what the middleware does for you automatically.)
 
+If the language code contains a territory ('en-us') the dash should be replaced by an underscore. So the `name` field in British English would be specified like this: `category.name_en_gb`.
+
 
 ==How it works==
 
